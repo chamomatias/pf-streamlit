@@ -1,99 +1,139 @@
 import streamlit as st
 from groq import Groq
+from datetime import datetime
 
 # Reemplaza con tu API key de Groq
 GROQ_API_KEY = "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"
 
-def generar_menu_y_lista_de_compras(personas, calorias, dias, dieta=""):
+def build_prompt(personas: int, calorias: int, dias: int, dieta: str) -> str:
     """
-    Genera un menú completo y una lista de compras utilizando la API de Groq.
-
-    Args:
-        personas (int): Cantidad de personas para el menú.
-        calorias (int): Requerimiento calórico diario.
-        dias (int): Cantidad de días para el menú.
-        dieta (str, opcional): Tipo de dieta (vegetariana, sin TACC, etc.). Defaults to "".
-
-    Returns:
-        str: El menú generado y la lista de compras.
+    Construye el prompt para la API de Groq solicitando un menú por día.
+    Se especifica que cada comida debe incluir los ingredientes con su cantidad y unidad de medida,
+    y al final indicar el total de calorías consumidas en el formato (Calorías: XX).
+    Además, se solicita la lista de compras con las unidades correspondientes.
     """
-
-    client = Groq(api_key=GROQ_API_KEY)
-
-    prompt = f"Generá un menú completo para {personas} personas, con un requerimiento diario de {calorias} calorías, para un total de {dias} días. Cada día debe incluir desayuno, colación de la mañana, almuerzo, merienda, colación de la tarde y cena. Las comidas deben ser variadas, equilibradas y fáciles de preparar."
-    if dieta:
-        prompt += f" Tené en cuenta la dieta {dieta}."
-    prompt += " Al finalizar, generá una lista de ingredientes agrupados por categorías (carnes, verduras, lácteos, etc.) con las unidades de medida (ej: kg, gr, ml, unidades) para facilitar una única compra semanal."
-
-    try:
-        chat_completion = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "user",
-                    "content": prompt,
-                }
-            ],
-            model="llama-3.3-70b-versatile" # Usando el modelo especificado
+    dieta_str = f" Tené en cuenta la dieta {dieta}." if dieta and dieta != "Ninguna" else ""
+    prompt = (
+        f"Generá un menú completo para {personas} personas, con un requerimiento diario de no más de {calorias} calorías, "
+        f"para un total de {dias} días.{dieta_str}\n\n"
+        "El menú debe estar en formato Markdown con el siguiente esquema para cada día:\n\n"
+    )
+    
+    for dia in range(1, dias + 1):
+        prompt += (
+            f"### Día {dia}:\n"
+            f"- **Desayuno:** Descripción del platillo, indicando los ingredientes con su cantidad y unidad de medida (por ejemplo, '500 grs de carne'). "
+            f"Al final, agregar entre paréntesis el total de calorías consumidas en el formato (Calorías: XX).\n"
+            f"- **Colación de la mañana:** Misma estructura que el desayuno.\n"
+            f"- **Almuerzo:** Misma estructura que el desayuno.\n"
+            f"- **Merienda:** Misma estructura que el desayuno.\n"
+            f"- **Colación de la tarde:** Misma estructura que el desayuno.\n"
+            f"- **Cena:** Misma estructura que el desayuno.\n\n"
         )
-        return chat_completion.choices[0].message.content
-    except Exception as e:
-        return f"Error al generar el menú: {e}"
+    
+    prompt += (
+        "Al finalizar TODOS los días, escribí exactamente la siguiente sección:\n\n"
+        "## Lista de compras:\n"
+        "- **Carnes:** (indicar cantidad con unidades, por ejemplo, '1 kg de pechuga de pollo')\n"
+        "- **Verduras:**\n"
+        "- **Frutas:**\n"
+        "- **Lácteos:**\n"
+        "- **Otros:**\n\n"
+        "Asegurate de incluir las unidades de medida correspondientes (kg, gr, ml, unidades, etc.)."
+    )
+    
+    return prompt
 
-# Interfaz de Streamlit
-st.title("Generador de Menús y Listas de Compras")
-
-personas = st.number_input("Cantidad de personas", min_value=1, value=4)
-calorias = st.number_input("Calorías diarias", min_value=1000, value=2000)
-dias = st.number_input("Cantidad de días", min_value=1, value=7)
-dieta = st.selectbox("Tipo de dieta", ["Ninguna", "Vegetariana", "Sin TACC"])
-
-if st.button("Generar Menú y Lista de Compras"):
-    resultado = generar_menu_y_lista_de_compras(personas, calorias, dias, dieta)
-    st.subheader("Menú y Lista de Compras Generados:")
-    st.write(resultado)
-    st.markdown("---")
-
-    # Extract shopping list and write to file
+def call_groq_api(prompt: str) -> str:
+    """
+    Envía el prompt a la API de Groq y devuelve el texto de la respuesta.
+    """
     try:
-        # Improved extraction of shopping list
-        last_cena_index = resultado.rfind("Cena:")  # Find the last occurrence of "Cena:"
-        last_almuerzo_index = resultado.rfind("Almuerzo:")
-        last_desayuno_index = resultado.rfind("Desayuno:")
-
-        if last_cena_index != -1:
-            menu = resultado[:last_cena_index + len("Cena:")].strip()
-            shopping_list = resultado[last_cena_index + len("Cena:"):].strip()
-        elif last_almuerzo_index != -1:
-            menu = resultado[:last_almuerzo_index + len("Almuerzo:")].strip()
-            shopping_list = resultado[last_almuerzo_index + len("Almuerzo:"):].strip()
-        elif last_desayuno_index != -1:
-            menu = resultado[:last_desayuno_index + len("Desayuno:")].strip()
-            shopping_list = resultado[last_desayuno_index + len("Desayuno:"):].strip()
-
-            # Format the shopping list
-            formatted_list = ""
-            for line in shopping_list.splitlines():
-                line = line.strip()
-                if line:
-                    formatted_list += line + "\n"
-
-            # Write the formatted shopping list to a file
-            with open("lista_de_compras.txt", "w", encoding="utf-8") as f:
-                f.write(formatted_list)
-
-            st.success("Lista de compras guardada en 'lista_de_compras.txt'")
-
-            # Create a download link for the shopping list
-            with open("lista_de_compras.txt", "r", encoding="utf-8") as f:
-                file_contents = f.read()
-            st.download_button(
-                label="Descargar lista de compras",
-                data=file_contents,
-                file_name="lista_de_compras.txt",
-                mime="text/plain",
-            )
-        else:
-            st.error("No se pudo identificar el menú y la lista de compras.")
-
+        client = Groq(api_key=GROQ_API_KEY)
+        response = client.chat.completions.create(
+            messages=[{"role": "user", "content": prompt}],
+            model="llama-3.3-70b-versatile"
+        )
+        return response.choices[0].message.content
     except Exception as e:
-        st.error(f"Error al procesar la lista de compras: {e}")
+        st.error(f"Error al llamar a la API de Groq: {e}")
+        return None
+
+def parse_response(respuesta: str):
+    """
+    Separa la respuesta en dos partes:
+    1. El menú (todo lo anterior a '## Lista de compras:')
+    2. La lista de compras (a partir de '## Lista de compras:')
+    """
+    if not respuesta:
+        return None, None
+
+    marcador = "## Lista de compras:"
+    idx = respuesta.find(marcador)
+    if idx == -1:
+        st.error("No se encontró la sección '## Lista de compras:' en la respuesta.")
+        return None, None
+
+    menu = respuesta[:idx].strip()
+    lista_compras = respuesta[idx:].strip()
+    return menu, lista_compras
+
+def guardar_lista_compras(lista_compras: str) -> str:
+    """
+    Guarda la lista de compras en un archivo de texto cuyo nombre incluye un prefijo de timestamp.
+    Devuelve el nombre del archivo si tuvo éxito.
+    """
+    try:
+        # Generar timestamp en formato "aammddHHMM"
+        timestamp = datetime.now().strftime("%y%m%d%H%M")
+        filename = f"{timestamp}_lista_de_compras.txt"
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(lista_compras)
+        return filename
+    except Exception as e:
+        st.error(f"Error al guardar la lista de compras: {e}")
+        return None
+
+def main():
+    st.title("Generador de Menús y Listas de Compras")
+    st.markdown("""
+        Esta aplicación genera menús diarios personalizados y listas de compras basadas en tus preferencias. 
+        Ingresa la cantidad de comensales, el máximo de calorías diarias, la cantidad de días y el tipo de dieta.
+        Cada día se presentará de forma estructurada, con cada comida en su propio renglón, especificando los ingredientes 
+        (con su cantidad y unidad de medida) y el total de calorías consumidas.
+    """)
+
+    # Entradas del usuario
+    personas = st.number_input("Cantidad de comensales", min_value=1, value=4)
+    calorias = st.number_input("Calorías máximas diarias", min_value=500, value=2000)
+    dias = st.number_input("Cantidad de días", min_value=1, value=7)
+    dieta = st.selectbox("Tipo de dieta", ["Ninguna", "Vegetariana", "Sin TACC", "Vegana", "Baja en carbohidratos"])
+
+    if st.button("Generar Menú y Lista de Compras"):
+        prompt = build_prompt(personas, calorias, dias, dieta)
+        st.info("Enviando solicitud a la API de Groq. Esto puede tardar unos segundos...")
+        respuesta = call_groq_api(prompt)
+
+        if respuesta:
+            menu, lista_compras = parse_response(respuesta)
+            if menu and lista_compras:
+                st.subheader("Menú Generado")
+                st.markdown(menu)
+                
+                st.subheader("Lista de Compras")
+                st.markdown(lista_compras)
+                
+                # Guardar la lista de compras en un archivo con prefijo de timestamp
+                filename = guardar_lista_compras(lista_compras)
+                if filename:
+                    with open(filename, "r", encoding="utf-8") as f:
+                        file_contents = f.read()
+                    st.download_button(
+                        label="Descargar lista de compras",
+                        data=file_contents,
+                        file_name=filename,
+                        mime="text/plain",
+                    )
+
+if __name__ == "__main__":
+    main()
